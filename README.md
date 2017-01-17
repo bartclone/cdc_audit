@@ -90,47 +90,45 @@ Features
 Requirements
 ============
 
- - PHP 5.3 or greater
+ - PHP 5.6 or greater
  - mysql 5.1 or greater
 
 
 Usage
 =====
 
- $ ./cdc_audit_gen_mysql.php 
+` $ ./cdc_audit_gen_mysql.php`
 
-   cdc_audit_gen_mysql.php [Options] -d <db> [-h <host> -d <db> -u <user> -p <pass>]
-   
+```
+Usage: cdc_audit_gen_mysql.php [Options] -d <db> [-h <host> -d <db> -u <user> -p <pass>]
+
    Required:
-   -d db              mysql database name
-   
+   -d DB              database name
+
    Options:
-   
-   -h HOST            hostname of machine running mysql.  default = localhost
-   -u USER            mysql username                      default = root
-   -p PASS            mysql password                      
+   -h HOST            address of machine running mysql.          default = localhost
+   -u USER            mysql username.                            default = root
+   -p PASS            mysql password.
+   -m DIR             path to write audit files.                 default = ./db_audit
+   -t TABLES          comma separated list of tables to audit.   default = generate for all tables
+   -e                 invert -t, exclude the listed tables.
+   -s                 separate triggers, do not rebuild and drop
+                      existing triggers (trigger name will be
+                      <table>_audit_<event>).
+   -A SUFFIX          suffix for audit tables.                   default = '_audit'
+   -a PREFIX          prefix for audit tables, replaces suffix.
+   -o FILE            send all output to FILE.
+   -v <INT>           verbosity level.  default = 4
+                        3 = silent except fatal error.
+                        4 = silent except warnings.
+                        6 = informational.
+                        7 = debug.
+   -?                 print this help message.
+```
 
-   -m audit_dir       path to write db audit files.       default = ./cdc_audit_gen.
-                                                          
-   -t tables         comma separated list of tables.      default = generate for all tables
-   
-   -n namespace      a prefix that will be pre-pended to all classnames.  This makes it
-                     possible to use the generated classes multiple times in the same project.
-                                                          default = no prefix.
+` $ ./cdc_audit_sync_mysql.php`
 
-   -o file            Send all output to FILE
-   -v <number>        Verbosity level.  default = 1
-                        0 = silent except fatal error.
-                        1 = silent except warnings.
-                        2 = informational
-                        3 = debug. ( includes extra logging and source line numbers )
-                        
-    -?                Print this help.
-
-
- $ ./cdc_audit_sync_mysql.php 
-
-
+```
    cdc_audit_sync_mysql.php [Options] -d <db> [-h <host> -d <db> -u <user> -p <pass>]
    
    Required:
@@ -158,6 +156,7 @@ Usage
                         3 = debug. ( includes extra logging and source line numbers )
                         
     -?                Print this help.
+```
 
 
 Usage Examples
