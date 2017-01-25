@@ -43,17 +43,24 @@ function main()
 }
 
 /**
- * Utility function for getting cli arg with default
+ * Get CLI arguments.
+ *
+ * @param array $opt getopts array.
+ * @param string $key Key to look for in array.
+ * @param string $default Value to return if key not set.
+ * @return mixed
  */
-function get_option($opt, $key, $default=null)
+function getOption($opt, $key, $default=null)
 {
-    return isset($opt[$key ]) ? $opt[$key] : $default;
+    return isset($opt[$key]) ? $opt[$key] : $default;
 }
 
 /**
- * Prints CLI usage information
+ * Print help text.
+ *
+ * @return void
  */
-function print_help()
+function printHelp()
 {
 
    echo <<< END
@@ -97,7 +104,7 @@ END;
  * This class is the meat of the script.  It reads the source audit tables
  * and syncs any new rows to the target CSV file.
  */
-class cdc_audit_sync_mysql
+class CdcAuditSyncMysql
 {
 
     private $host;
@@ -152,7 +159,7 @@ class cdc_audit_sync_mysql
 
         $success = true;
         if ($this->output_dir && $this->output_dir != '=NONE=') {
-            $success = $this->sync_audit_tables();
+            $success = $this->syncAuditTables();
         }
 
         return $success;
@@ -161,12 +168,12 @@ class cdc_audit_sync_mysql
    /**
     * Queries mysql information_schema and syncs audit tables to csv files
     */
-    private function sync_audit_tables()
+    private function syncAuditTables()
     {
 
         try {
 
-            $this->ensure_dir_exists($this->output_dir);
+            $this->ensureDirExists($this->output_dir);
 
             // Connect to the MySQL server
             $this->log(sprintf('Connecting to mysql. host = %s, user = %s, pass = %s ', $this->host, $this->user, $this->pass),  __FILE__, __LINE__, self::log_debug);
@@ -195,7 +202,7 @@ class cdc_audit_sync_mysql
                         continue;
                     }
 
-                    $this->sync_table($table);
+                    $this->syncTable($table);
                 }
 
                 $this->log(sprintf('Successfully synced audit tables to %s', $this->output_dir),  __FILE__, __LINE__, self::log_warning);
@@ -224,7 +231,7 @@ class cdc_audit_sync_mysql
     /**
      * Ensure that given directory exists. throws exception if cannot be created.
      */
-    private function ensure_dir_exists($path)
+    private function ensureDirExists($path)
     {
         $this->log(sprintf('checking if path exists: %s', $path), __FILE__, __LINE__, self::log_debug);
         if (!is_dir($path)) {
@@ -240,23 +247,23 @@ class cdc_audit_sync_mysql
     /**
      * Syncs audit table to csv file.
      */
-    private function sync_table($table)
+    private function syncTable($table)
     {
 
         $this->log(sprintf("Processing table %s", $table),  __FILE__, __LINE__, self::log_info);
 
-        $pk_last = $this->get_latest_csv_row_pk($table);
+        $pk_last = $this->getLatestCsvRowPk($table);
         $result = mysql_query(sprintf('select * from `%s` where audit_pk > %s', $table, $pk_last));
 
         $mode = $pk_last == -1 ? 'w' : 'a';
-        $fh = fopen($this->csv_path($table), $mode);
+        $fh = fopen($this->csvPath($table), $mode);
 
         if (!$fh) {
             throw new Exception(sprintf("Unable to open file %s for writing", $this->csv_path($table)));
         }
 
         if ($pk_last == -1) {
-            $this->write_csv_header_row($fh, $result);
+            $this->writeCsvHeaderRow($fh, $result);
         }
 
         while ($row = mysql_fetch_array($result, MYSQL_NUM)) {
@@ -266,7 +273,7 @@ class cdc_audit_sync_mysql
         fclose($fh);
 
         if ($this->wipe) {
-            $this->wipe_audit_table($table);
+            $this->wipeAuditTable($table);
         }
     }
 
@@ -287,7 +294,7 @@ class cdc_audit_sync_mysql
      *
      * @TODO:  add option to wipe only older than a specific age.
      */
-    private function wipe_audit_table($table)
+    private function wipeAuditAable($table)
     {
 
         $this->log(sprintf('wiping audit table: %s', $table), __FILE__, __LINE__, self::log_info);
@@ -328,7 +335,7 @@ class cdc_audit_sync_mysql
     /**
      * given csv fh and mysql result, writes a csv header row with column names
      */
-    private function write_csv_header_row($fh, $result)
+    private function writeCsvHeaderRow($fh, $result)
     {
 
         $cols = array();
@@ -346,12 +353,12 @@ class cdc_audit_sync_mysql
     /**
      * given source table name, primary key value of latest row in csv file, or -1
      */
-    private function get_latest_csv_row_pk($table)
+    private function getLatestCsvRowPk($table)
     {
 
         $last_pk = -1;
 
-        $lastline = $this->get_last_line($this->csv_path($table));
+        $lastline = $this->getLastLine($this->csv_path($table));
 
         $row = @str_getcsv($lastline);
 
@@ -370,7 +377,7 @@ class cdc_audit_sync_mysql
     /**
      * returns the last line of a file, or empty string.
      */
-    private function get_last_line($filename)
+    private function getLastLine($filename)
     {
 
         if (!file_exists($filename)) {
@@ -398,7 +405,7 @@ class cdc_audit_sync_mysql
     /**
      * given source table name, returns audit sql filename
      */
-    private function csv_path($table)
+    private function csvPath($table)
     {
         return sprintf("%s/%s.csv", $this->output_dir, $table);
     }
