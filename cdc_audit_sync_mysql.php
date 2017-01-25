@@ -49,6 +49,7 @@ function main()
     return $success ? 0 : -1;
 }
 
+
 /**
  * Get CLI arguments.
  *
@@ -61,6 +62,7 @@ function getOption($opt, $key, $default=null)
 {
     return isset($opt[$key]) ? $opt[$key] : $default;
 }
+
 
 /**
  * Print help text.
@@ -102,7 +104,6 @@ function printHelp()
  */
 class CdcAuditSyncMysql
 {
-
     private $host;
     private $user;
     private $pass;
@@ -149,7 +150,6 @@ class CdcAuditSyncMysql
      */
     public function run()
     {
-
         $success = true;
         if ($this->output_dir && $this->output_dir != '=NONE=') {
             $success = $this->syncAuditTables();
@@ -163,18 +163,16 @@ class CdcAuditSyncMysql
     */
     private function syncAuditTables()
     {
-
         try {
-
             $this->ensureDirExists($this->output_dir);
 
             // Connect to the MySQL server
-            $this->log(sprintf('Connecting to mysql. host = %s, user = %s, pass = %s ', $this->host, $this->user, $this->pass),  __FILE__, __LINE__, LOG_DEBUG);
+            $this->log(sprintf('Connecting to mysql. host = %s, user = %s, pass = %s ', $this->host, $this->user, $this->pass),  LOG_DEBUG);
             $link = @mysql_connect($this->host,$this->user,$this->pass);
             if ($link) {
-                $this->log('Connected to mysql.  Getting tables.',  __FILE__, __LINE__, LOG_INFO);
+                $this->log('Connected to mysql.  Getting tables.',  LOG_INFO);
 
-                  // Select the database
+                // Select the database
                 if (!mysql_selectdb($this->db,$link)) {
                     throw new Exception("Unable to select database {$this->db}");
                 }
@@ -186,19 +184,19 @@ class CdcAuditSyncMysql
                     $table = $row[0]  ;
 
                     if (!strstr($table, '_audit')) {
-                        $this->log(sprintf('Found table %s.  Does not appears to be an audit table.  skipping', $table),  __FILE__, __LINE__, LOG_INFO);
+                        $this->log(sprintf('Found table %s.  Does not appears to be an audit table.  skipping', $table),  LOG_INFO);
                         continue;
                     }
 
                     if (is_array($this->tables) && !@$this->tables[$table]) {
-                        $this->log(sprintf('Found audit table %s.  Not in output list.  skipping', $table),  __FILE__, __LINE__, LOG_INFO);
+                        $this->log(sprintf('Found audit table %s.  Not in output list.  skipping', $table),  LOG_INFO);
                         continue;
                     }
 
                     $this->syncTable($table);
                 }
 
-                $this->log(sprintf('Successfully synced audit tables to %s', $this->output_dir),  __FILE__, __LINE__, LOG_WARNING);
+                $this->log(sprintf('Successfully synced audit tables to %s', $this->output_dir),  LOG_WARNING);
             } else {
                 throw new Exception("Unable to connect to mysql");
             }
@@ -210,14 +208,16 @@ class CdcAuditSyncMysql
     }
 
     /**
-     * Log a message (or not) depending on loglevel
+     * Log a message (or not) depending on log level.
+     *
+     * @param string $message Log message.
+     * @param int $level Log level.
+     * @return void
      */
-    private function log($msg, $file, $line, $level)
+    private function log($message, $level)
     {
-        if ($level >= LOG_DEBUG && $level <= $this->verbosity) {
-            fprintf($this->stdout, "%s  -- %s : %s\n", $msg, $file, $line);
-        } elseif ($level <= $this->verbosity) {
-            fprintf($this->stdout, "%s\n", $msg);
+        if ($level <= $this->verbosity) {
+            fprintf($this->stdout, "%s\n", $message);
         }
     }
 
@@ -226,14 +226,15 @@ class CdcAuditSyncMysql
      */
     private function ensureDirExists($path)
     {
-        $this->log(sprintf('checking if path exists: %s', $path), __FILE__, __LINE__, LOG_DEBUG);
+        $this->log(sprintf('checking if path exists: %s', $path), LOG_DEBUG);
+        $this->log("Checking if path exists: {$this->output_dir}", LOG_DEBUG);
         if (!is_dir($path)) {
-            $this->log(sprintf('path does not exist.  creating: %s', $path), __FILE__, __LINE__, LOG_DEBUG);
+            $this->log(sprintf('path does not exist.  creating: %s', $path), LOG_DEBUG);
             $rc = @mkdir($path);
             if (!$rc) {
                 throw new Exception("Cannot mkdir " . $path);
             }
-            $this->log(sprintf('path created: %s', $path), __FILE__, __LINE__, LOG_INFO);
+            $this->log(sprintf('path created: %s', $path), LOG_INFO);
         }
     }
 
@@ -242,8 +243,7 @@ class CdcAuditSyncMysql
      */
     private function syncTable($table)
     {
-
-        $this->log(sprintf("Processing table %s", $table),  __FILE__, __LINE__, LOG_INFO);
+        $this->log(sprintf("Processing table %s", $table),  LOG_INFO);
 
         $pk_last = $this->getLatestCsvRowPk($table);
         $result = mysql_query(sprintf('select * from `%s` where audit_pk > %s', $table, $pk_last));
@@ -289,8 +289,7 @@ class CdcAuditSyncMysql
      */
     private function wipeAuditAable($table)
     {
-
-        $this->log(sprintf('wiping audit table: %s', $table), __FILE__, __LINE__, LOG_INFO);
+        $this->log(sprintf('wiping audit table: %s', $table), LOG_INFO);
 
         $incr_amount = 100;
 
@@ -313,7 +312,7 @@ class CdcAuditSyncMysql
             }
 
             $delmax = min($min + $incr_amount, $max);
-            $this->log(sprintf('wiping audit table rows %s to %s', $min, $delmax), __FILE__, __LINE__, LOG_INFO);
+            $this->log(sprintf('wiping audit table rows %s to %s', $min, $delmax), LOG_INFO);
 
             $query = sprintf('delete from `%s` where audit_pk >= %s and audit_pk < %s', $table, $min, $delmax);
             $result = mysql_query($query);
@@ -330,7 +329,6 @@ class CdcAuditSyncMysql
      */
     private function writeCsvHeaderRow($fh, $result)
     {
-
         $cols = array();
         $i = 0;
         while ($i < mysql_num_fields($result)) {
@@ -348,7 +346,6 @@ class CdcAuditSyncMysql
      */
     private function getLatestCsvRowPk($table)
     {
-
         $last_pk = -1;
 
         $lastline = $this->getLastLine($this->csv_path($table));
@@ -372,7 +369,6 @@ class CdcAuditSyncMysql
      */
     private function getLastLine($filename)
     {
-
         if (!file_exists($filename)) {
             return '';
         }
