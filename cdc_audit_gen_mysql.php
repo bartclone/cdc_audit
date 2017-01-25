@@ -10,7 +10,7 @@ exit (main());
  */
 function main()
 {
-    $opt = getopt("a:A:c:d:eh:su:p:o:v:m:t:?");
+    $opt = getopt("a:A:d:eh:su:p:o:v:m:t:?");
     if (isset($opt['?']) || !isset($opt['d'])) {
         printHelp();
         return -1;
@@ -31,7 +31,7 @@ function main()
     $config['suffix'] = getOption($opt, 'A', '_audit');
 
     // Script settings
-    $config['audit_dir'] = getOption($opt, 'm', './asd');
+    $config['audit_dir'] = getOption($opt, 'm', './cdc_audit_gen');
     $config['verbosity'] = getOption($opt, 'v', 1);
     $config['stdout'] = STDOUT;
 
@@ -81,7 +81,7 @@ function printHelp()
         "   -h HOST            address of machine running mysql.          default = localhost\n" .
         "   -u USER            mysql username.                            default = root\n" .
         "   -p PASS            mysql password.\n" .
-        "   -m DIR             path to write audit files.                 default = ./db_audit\n" .
+        "   -m DIR             path to write audit files.                 default = ./cdc_audit_gen\n" .
         "   -t TABLES          comma separated list of tables to audit.   default = generate for all tables\n" .
         "   -e                 invert -t, exclude the listed tables.\n" .
         "   -s                 separate triggers, do not rebuild and drop\n" .
