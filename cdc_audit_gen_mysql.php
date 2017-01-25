@@ -1,3 +1,4 @@
+#!/usr/bin/env php
 <?php
 
 exit (main());
