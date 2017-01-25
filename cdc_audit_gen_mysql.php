@@ -32,7 +32,7 @@ function main()
 
     // Script settings
     $config['audit_dir'] = getOption($opt, 'm', './cdc_audit_gen');
-    $config['verbosity'] = getOption($opt, 'v', 1);
+    $config['verbosity'] = getOption($opt, 'v', 4);
     $config['stdout'] = STDOUT;
 
     if (isset($opt['o'])) {
