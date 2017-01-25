@@ -4,38 +4,45 @@
 exit (main());
 
 /**
- * Application main function.  Retrieves cli args and runs engine.
+ * Application main function.
+ *
+ * @return int
  */
 function main()
 {
-
-    $opt = getopt("D:d:h:u:p:o:v:m:n:c:t:s:xw?");
-    if (@$opt['?'] || !@$opt['d']) {
-        print_help();
+    $opt = getopt("a:A:d:eh:u:p:o:v:m:t:?");
+    if (isset($opt['?']) || !isset($opt['d'])) {
+        printHelp();
         return -1;
     }
 
     $config = array();
-    $config['db'] = get_option($opt, 'd');
-    $config['host'] = get_option($opt, 'h', 'localhost');
-    $config['user'] = get_option($opt, 'u', 'root');
-    $config['pass'] = get_option($opt, 'p', '');
-    $config['namespace_prefix'] = get_option($opt, 'n', '');
-    $config['verbosity'] = get_option($opt, 'v', 4);
-    $config['output_dir'] = get_option($opt, 'm', './cdc_audit_sync');
-    $config['tables'] = get_option($opt, 't', null);
-    $config['wipe'] = isset($opt['w']) ? true : false;
+    // Connection settings
+    $config['db'] = getOption($opt, 'd');
+    $config['host'] = getOption($opt, 'h', 'localhost');
+    $config['user'] = getOption($opt, 'u', 'root');
+    $config['pass'] = getOption($opt, 'p', '');
+
+    // Audit settings
+    $config['tables'] = getOption($opt, 't', null);
+    $config['exclude'] = getOption($opt, 'e', null) !== null ? true : false;
+    $config['wipe'] = getOption($opt, 'w', null) !== null ? true : false;
+    $config['prefix'] = getOption($opt, 'a', null);
+    $config['suffix'] = getOption($opt, 'A', '_audit');
+
+    // Script settings
+    $config['output_dir'] = getOption($opt, 'm', './cdc_audit_sync');
+    $config['verbosity'] = getOption($opt, 'v', 4);
     $config['stdout'] = STDOUT;
 
     if (isset($opt['o'])) {
-        $fh = fopen($opt['o'], 'w');
-        if (!$fh) {
+        if (!$fh = fopen($opt['o'], 'w')) {
             die("Could not open {$opt['o']} for writing");
         }
         $config['stdout'] = $fh;
     }
 
-    $engine = new cdc_audit_sync_mysql($config);
+    $engine = new CdcAuditSyncMysql($config);
     $success = $engine->run();
 
     fclose($config['stdout']);
@@ -121,29 +128,32 @@ class CdcAuditSyncMysql
     private $wipe = false;
 
     /**
-     * Class constructor.  Requires a keyval config array.
+     * Constructor.
+     *
+     * @param array $config Config settings in associative array form.
      */
     public function __construct($config)
     {
-
+        $this->db = $config['db'];
         $this->host = $config['host'];
         $this->user = $config['user'];
         $this->pass = $config['pass'];
-        $this->db = $config['db'];
-        $this->output_dir = $config['output_dir'];
-        $this->wipe = $config['wipe'];
 
-        $tables = @$config['tables'] ? explode(',', @$config['tables']) : null;
-        if ($tables) {
+        if (!empty($config['tables'])) {
             $this->tables = array();
-            foreach($tables as $t) {
-               $this->tables[trim($t)] = 1;
+            foreach (explode(',', $config['tables']) as $table) {
+               $this->tables[trim($table)] = true;
             }
         }
+        $this->exclude = $config['exclude'];
+        $this->separate = $config['separate'];
+        $this->prefix = $config['prefix'];
+        $this->suffix = $config['suffix'];
 
+        $this->output_dir = $config['output_dir'];
+        $this->wipe = $config['wipe'];
         $this->verbosity = $config['verbosity'];
         $this->stdout = $config['stdout'];
-
     }
 
     /**
