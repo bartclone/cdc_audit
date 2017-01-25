@@ -21,7 +21,7 @@ function main()
     $config['user'] = get_option($opt, 'u', 'root');
     $config['pass'] = get_option($opt, 'p', '');
     $config['namespace_prefix'] = get_option($opt, 'n', '');
-    $config['verbosity'] = get_option($opt, 'v', 1);
+    $config['verbosity'] = get_option($opt, 'v', 4);
     $config['output_dir'] = get_option($opt, 'm', './cdc_audit_sync');
     $config['tables'] = get_option($opt, 't', null);
     $config['wipe'] = isset($opt['w']) ? true : false;
@@ -86,11 +86,11 @@ function printHelp()
                       Note: this functionality is mostly untested!  dangerous!
 
    -o file            Send all output to FILE
-   -v <number>        Verbosity level.  default = 1
-                        0 = silent except fatal error.
-                        1 = silent except warnings.
-                        2 = informational
-                        3 = debug. (includes extra logging and source line numbers)
+   -v <number>        Verbosity level.  default = 4
+                        3 = silent except fatal error.
+                        4 = silent except warnings.
+                        6 = informational.
+                        7 = debug.
 
     -?                Print this help.
 
@@ -119,11 +119,6 @@ class CdcAuditSyncMysql
 
     private $tables = null;
     private $wipe = false;
-
-    const log_error = 0;
-    const log_warning = 1;
-    const log_info = 2;
-    const log_debug = 3;
 
     /**
      * Class constructor.  Requires a keyval config array.
@@ -176,10 +171,10 @@ class CdcAuditSyncMysql
             $this->ensureDirExists($this->output_dir);
 
             // Connect to the MySQL server
-            $this->log(sprintf('Connecting to mysql. host = %s, user = %s, pass = %s ', $this->host, $this->user, $this->pass),  __FILE__, __LINE__, self::log_debug);
+            $this->log(sprintf('Connecting to mysql. host = %s, user = %s, pass = %s ', $this->host, $this->user, $this->pass),  __FILE__, __LINE__, LOG_DEBUG);
             $link = @mysql_connect($this->host,$this->user,$this->pass);
             if ($link) {
-                $this->log('Connected to mysql.  Getting tables.',  __FILE__, __LINE__, self::log_info);
+                $this->log('Connected to mysql.  Getting tables.',  __FILE__, __LINE__, LOG_INFO);
 
                   // Select the database
                 if (!mysql_selectdb($this->db,$link)) {
@@ -193,24 +188,24 @@ class CdcAuditSyncMysql
                     $table = $row[0]  ;
 
                     if (!strstr($table, '_audit')) {
-                        $this->log(sprintf('Found table %s.  Does not appears to be an audit table.  skipping', $table),  __FILE__, __LINE__, self::log_info);
+                        $this->log(sprintf('Found table %s.  Does not appears to be an audit table.  skipping', $table),  __FILE__, __LINE__, LOG_INFO);
                         continue;
                     }
 
                     if (is_array($this->tables) && !@$this->tables[$table]) {
-                        $this->log(sprintf('Found audit table %s.  Not in output list.  skipping', $table),  __FILE__, __LINE__, self::log_info);
+                        $this->log(sprintf('Found audit table %s.  Not in output list.  skipping', $table),  __FILE__, __LINE__, LOG_INFO);
                         continue;
                     }
 
                     $this->syncTable($table);
                 }
 
-                $this->log(sprintf('Successfully synced audit tables to %s', $this->output_dir),  __FILE__, __LINE__, self::log_warning);
+                $this->log(sprintf('Successfully synced audit tables to %s', $this->output_dir),  __FILE__, __LINE__, LOG_WARNING);
             } else {
                 throw new Exception("Unable to connect to mysql");
             }
         } catch(Exception $e) {
-            $this->log($e->getMessage(), $e->getFile(), $e->getLine(), self::log_error);
+            $this->log($e->getMessage(), $e->getFile(), $e->getLine(), LOG_ERR);
             return false;
         }
         return true;
@@ -221,7 +216,7 @@ class CdcAuditSyncMysql
      */
     private function log($msg, $file, $line, $level)
     {
-        if ($level >= self::log_debug && $level <= $this->verbosity) {
+        if ($level >= LOG_DEBUG && $level <= $this->verbosity) {
             fprintf($this->stdout, "%s  -- %s : %s\n", $msg, $file, $line);
         } elseif ($level <= $this->verbosity) {
             fprintf($this->stdout, "%s\n", $msg);
@@ -233,14 +228,14 @@ class CdcAuditSyncMysql
      */
     private function ensureDirExists($path)
     {
-        $this->log(sprintf('checking if path exists: %s', $path), __FILE__, __LINE__, self::log_debug);
+        $this->log(sprintf('checking if path exists: %s', $path), __FILE__, __LINE__, LOG_DEBUG);
         if (!is_dir($path)) {
-            $this->log(sprintf('path does not exist.  creating: %s', $path), __FILE__, __LINE__, self::log_debug);
+            $this->log(sprintf('path does not exist.  creating: %s', $path), __FILE__, __LINE__, LOG_DEBUG);
             $rc = @mkdir($path);
             if (!$rc) {
                 throw new Exception("Cannot mkdir " . $path);
             }
-            $this->log(sprintf('path created: %s', $path), __FILE__, __LINE__, self::log_info);
+            $this->log(sprintf('path created: %s', $path), __FILE__, __LINE__, LOG_INFO);
         }
     }
 
@@ -250,7 +245,7 @@ class CdcAuditSyncMysql
     private function syncTable($table)
     {
 
-        $this->log(sprintf("Processing table %s", $table),  __FILE__, __LINE__, self::log_info);
+        $this->log(sprintf("Processing table %s", $table),  __FILE__, __LINE__, LOG_INFO);
 
         $pk_last = $this->getLatestCsvRowPk($table);
         $result = mysql_query(sprintf('select * from `%s` where audit_pk > %s', $table, $pk_last));
@@ -297,7 +292,7 @@ class CdcAuditSyncMysql
     private function wipeAuditAable($table)
     {
 
-        $this->log(sprintf('wiping audit table: %s', $table), __FILE__, __LINE__, self::log_info);
+        $this->log(sprintf('wiping audit table: %s', $table), __FILE__, __LINE__, LOG_INFO);
 
         $incr_amount = 100;
 
@@ -320,7 +315,7 @@ class CdcAuditSyncMysql
             }
 
             $delmax = min($min + $incr_amount, $max);
-            $this->log(sprintf('wiping audit table rows %s to %s', $min, $delmax), __FILE__, __LINE__, self::log_info);
+            $this->log(sprintf('wiping audit table rows %s to %s', $min, $delmax), __FILE__, __LINE__, LOG_INFO);
 
             $query = sprintf('delete from `%s` where audit_pk >= %s and audit_pk < %s', $table, $min, $delmax);
             $result = mysql_query($query);
