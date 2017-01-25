@@ -69,41 +69,30 @@ function getOption($opt, $key, $default=null)
  */
 function printHelp()
 {
-
-   echo <<< END
-
-   cdc_audit_sync_mysql.php [Options] -d <db> [-h <host> -d <db> -u <user> -p <pass>]
-
-   Required:
-   -d db              mysql database name
-
-   Options:
-
-   -h HOST            hostname of machine running mysql.  default = localhost
-   -u USER            mysql username                      default = root
-   -p PASS            mysql password
-
-   -m output_dir      path to write db audit files.       default = ./cdc_audit_sync.
-
-   -t tables          comma separated list of tables.      default = generate for all tables
-
-   -w                 wipe (delete) all but the very last audit row after syncing.
-                      this operation is performed with a truncate and tmp table.
-
-                      Note: this functionality is mostly untested!  dangerous!
-
-   -o file            Send all output to FILE
-   -v <number>        Verbosity level.  default = 4
-                        3 = silent except fatal error.
-                        4 = silent except warnings.
-                        6 = informational.
-                        7 = debug.
-
-    -?                Print this help.
-
-
-END;
-
+    echo
+        "Usage: cdc_audit_sync_mysql.php [Options] -d <db> [-h <host> -d <db> -u <user> -p <pass>]\n" .
+        "\n" .
+        "   Required:\n" .
+        "   -d DB              database name\n" .
+        "\n" .
+        "   Options:\n" .
+        "   -h HOST            address of machine running mysql.          default = localhost\n" .
+        "   -u USER            mysql username.                            default = root\n" .
+        "   -p PASS            mysql password.\n" .
+        "   -m DIR             path to write audit files.                 default = ./cdc_audit_sync\n" .
+        "   -t TABLES          comma separated list of tables to audit.   default = generate for all tables\n" .
+        "   -e                 invert -t, exclude the listed tables.\n" .
+        "   -w                 wipe all but the very last audit row after\n" .
+        "                      syncing through truncate and a tmp table.\n" .
+        "   -A SUFFIX          suffix for audit tables.                   default = '_audit'\n" .
+        "   -a PREFIX          prefix for audit tables, replaces suffix.\n" .
+        "   -o FILE            send all output to FILE                    default = send output to STDOUT.\n" .
+        "   -v <INT>           verbosity level.  default = 4\n" .
+        "                        3 = silent except fatal error.\n" .
+        "                        4 = silent except warnings.\n" .
+        "                        6 = informational.\n" .
+        "                        7 = debug.\n" .
+        "   -?                 print this help message.\n";
 }
 
 
@@ -146,7 +135,6 @@ class CdcAuditSyncMysql
             }
         }
         $this->exclude = $config['exclude'];
-        $this->separate = $config['separate'];
         $this->prefix = $config['prefix'];
         $this->suffix = $config['suffix'];
 
