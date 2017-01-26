@@ -164,6 +164,25 @@ class CdcAuditGenMysql
     }
 
     /**
+     * Ensure that given directory exists.
+     *
+     * @throws Exception if directory can't be created.
+     * @param string $path Path to directory.
+     * @return void
+     */
+    private function ensureDirExists($path)
+    {
+        $this->log("Checking if path exists: {$this->output_dir}", LOG_DEBUG);
+        if (!is_dir($this->output_dir)) {
+            $this->log("Path does not exist.  creating: {$this->output_dir}", LOG_DEBUG);
+            if (!@mkdir($this->output_dir)) {
+                throw new Exception("Cannot mkdir {$this->output_dir}");
+            }
+            $this->log("Path created: {$this->output_dir}", LOG_INFO);
+        }
+    }
+
+    /**
      * Get audit table name.
      *
      * @param string $table
@@ -210,17 +229,8 @@ class CdcAuditGenMysql
     private function createDbAudit()
     {
         try {
-            /**
-             * Create path if not already exists
-             */
-            $this->log("Checking if path exists: {$this->output_dir}", LOG_DEBUG);
-            if (!is_dir($this->output_dir)) {
-                $this->log("Path does not exist.  creating: {$this->output_dir}", LOG_DEBUG);
-                if (!@mkdir($this->output_dir)) {
-                    throw new Exception("Cannot mkdir {$this->output_dir}");
-                }
-                $this->log("Path created: {$this->output_dir}", LOG_INFO);
-            }
+            // Create path if not already exists
+            $this->ensureDirExists($this->output_dir);
 
             /**
              * Delete audit file if already exists
