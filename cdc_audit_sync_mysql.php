@@ -158,50 +158,58 @@ class CdcAuditSyncMysql
         return $success;
     }
 
-   /**
-    * Queries mysql information_schema and syncs audit tables to csv files
-    */
+    /**
+     * Query INFORMATION_SCHEMA and sync audit tables to CSV files.
+     *
+     * @return bool
+     */
     private function syncAuditTables()
     {
         try {
+            // Create path if not already exists
             $this->ensureDirExists($this->output_dir);
 
-            // Connect to the MySQL server
-            $this->log(sprintf('Connecting to mysql. host = %s, user = %s, pass = %s ', $this->host, $this->user, $this->pass),  LOG_DEBUG);
-            $link = @mysql_connect($this->host,$this->user,$this->pass);
-            if ($link) {
-                $this->log('Connected to mysql.  Getting tables.',  LOG_INFO);
+            /**
+             * Connect to the MySQL server
+             */
+            $this->log("Connecting to mysql. host={$this->host}, user={$this->user}, pass={$this->pass}", LOG_DEBUG);
+            $dsn = "mysql:host={$this->host};dbname={$this->db}";
+            $opt = [
+                PDO::ATTR_ERRMODE            => PDO::ERRMODE_EXCEPTION,
+                PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,
+                PDO::ATTR_EMULATE_PREPARES   => false,
+            ];
+            $this->connection = new PDO($dsn, $this->user, $this->pass, $opt);
 
-                // Select the database
-                if (!mysql_selectdb($this->db,$link)) {
-                    throw new Exception("Unable to select database {$this->db}");
-                }
+            $this->log('Connected to mysql. Getting tables.',  LOG_INFO);
 
-                // Get all tables
-                $result = mysql_query('SHOW TABLES');
-                while ($row = mysql_fetch_array($result, MYSQL_NUM)) {
-                    // Get table name
-                    $table = $row[0]  ;
-
-                    if (!strstr($table, '_audit')) {
-                        $this->log(sprintf('Found table %s.  Does not appears to be an audit table.  skipping', $table),  LOG_INFO);
+            /**
+             * Get all tables
+             */
+            $stmt = $this->connection->prepare("SHOW TABLES");
+            $stmt->execute();
+            while($table = $stmt->fetch()["Tables_in_{$this->db}"]) {
+                if (is_array($this->tables)) {
+                    if ((!$this->exclude && !isset($this->tables[$table]))
+                            || ($this->exclude && isset($this->tables[$table]))) {
+                        $this->log("Found table $table.  Not in output list.  skipping", LOG_INFO);
                         continue;
                     }
-
-                    if (is_array($this->tables) && !@$this->tables[$table]) {
-                        $this->log(sprintf('Found audit table %s.  Not in output list.  skipping', $table),  LOG_INFO);
-                        continue;
-                    }
-
-                    $this->syncTable($table);
                 }
 
-                $this->log(sprintf('Successfully synced audit tables to %s', $this->output_dir),  LOG_WARNING);
-            } else {
-                throw new Exception("Unable to connect to mysql");
+                /**
+                 * Ignore non-audit tables
+                 */
+                if (!stristr($table, $this->prefix) && !stristr($table, $this->suffix)) {
+                    $this->log("Found table $table.  Appears to be a non-audit table.  skipping", LOG_INFO);
+                    continue;
+                }
+
+                $this->syncTable($table);
             }
+            $this->log(sprintf('Successfully synced audit tables to %s', $this->output_dir), LOG_WARNING);
         } catch(Exception $e) {
-            $this->log($e->getMessage(), $e->getFile(), $e->getLine(), LOG_ERR);
+            $this->log($e->getMessage() . ' -- line: ' . $e->getLine(), LOG_ERR);
             return false;
         }
         return true;
@@ -222,19 +230,21 @@ class CdcAuditSyncMysql
     }
 
     /**
-     * Ensure that given directory exists. throws exception if cannot be created.
+     * Ensure that given directory exists.
+     *
+     * @throws Exception if directory can't be created.
+     * @param string $path Path to directory.
+     * @return void
      */
     private function ensureDirExists($path)
     {
-        $this->log(sprintf('checking if path exists: %s', $path), LOG_DEBUG);
         $this->log("Checking if path exists: {$this->output_dir}", LOG_DEBUG);
-        if (!is_dir($path)) {
-            $this->log(sprintf('path does not exist.  creating: %s', $path), LOG_DEBUG);
-            $rc = @mkdir($path);
-            if (!$rc) {
-                throw new Exception("Cannot mkdir " . $path);
+        if (!is_dir($this->output_dir)) {
+            $this->log("Path does not exist.  creating: {$this->output_dir}", LOG_DEBUG);
+            if (!@mkdir($this->output_dir)) {
+                throw new Exception("Cannot mkdir {$this->output_dir}");
             }
-            $this->log(sprintf('path created: %s', $path), LOG_INFO);
+            $this->log("Path created: {$this->output_dir}", LOG_INFO);
         }
     }
 
@@ -243,7 +253,7 @@ class CdcAuditSyncMysql
      */
     private function syncTable($table)
     {
-        $this->log(sprintf("Processing table %s", $table),  LOG_INFO);
+        $this->log(sprintf("Processing table %s", $table), LOG_INFO);
 
         $pk_last = $this->getLatestCsvRowPk($table);
         $result = mysql_query(sprintf('select * from `%s` where audit_pk > %s', $table, $pk_last));
