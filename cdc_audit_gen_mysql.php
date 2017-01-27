@@ -372,7 +372,7 @@ class CdcAuditGenMysql
 
         // Prepend audit fields to list of table fields
         array_unshift($info, array('Field' => 'audit_user', 'Type' => 'VARCHAR(255)', 'Null' => false, 'Comment' => 'User triggering source table event'));
-        array_unshift($info, array('Field' => 'audit_event', 'Type' => 'CHAR(6)', 'Null' => false, 'Comment' => 'Type of source table event'));
+        array_unshift($info, array('Field' => 'audit_event', 'Type' => "ENUM('insert','update','delete')", 'Null' => false, 'Comment' => 'Type of source table event'));
         array_unshift($info, array('Field' => 'audit_timestamp', 'Type' => 'TIMESTAMP', 'Null' => false, 'Comment' => 'Timestamp of source table event'));
         array_unshift($info, array('Field' => 'audit_pk', 'Type' => 'INT(11) UNSIGNED', 'Null' => false, 'Comment' => 'Audit table primary key, useful for sorting since MySQL time data types are only granular to second level.'));
 
