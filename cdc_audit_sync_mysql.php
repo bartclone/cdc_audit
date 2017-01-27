@@ -1,6 +1,8 @@
 #!/usr/bin/env php
 <?php
 
+// TODO: add feature to wipe only older than a specific age.
+
 exit (main());
 
 /**
@@ -10,7 +12,7 @@ exit (main());
  */
 function main()
 {
-    $opt = getopt("a:A:d:eh:u:p:o:v:m:t:?");
+    $opt = getopt("a:A:d:eh:u:p:o:v:wm:t:?");
     if (isset($opt['?']) || !isset($opt['d'])) {
         printHelp();
         return -1;
@@ -36,7 +38,7 @@ function main()
     $config['stdout'] = STDOUT;
 
     if (isset($opt['o'])) {
-        if (!$fh = fopen($opt['o'], 'w')) {
+        if (!$fh = @fopen($opt['o'], 'w')) {
             die("Could not open {$opt['o']} for writing");
         }
         $config['stdout'] = $fh;
@@ -99,8 +101,7 @@ function printHelp()
 
 
 /**
- * This class is the meat of the script.  It reads the source audit tables
- * and syncs any new rows to the target CSV file.
+ * Sync audit table rows to CSV files.
  */
 class CdcAuditSyncMysql
 {
@@ -109,13 +110,18 @@ class CdcAuditSyncMysql
     private $pass;
     private $db;
 
-    private $verbosity = 1;
-    private $stdout = STDOUT;
+    private $tables;
+    private $exclude;
+    private $wipe;
+    private $prefix;
+    private $suffix;
 
     private $output_dir;
+    private $verbosity;
+    private $stdout;
 
-    private $tables = null;
-    private $wipe = false;
+    private $connection;
+    private $csvFile;
 
     /**
      * Constructor.
@@ -146,16 +152,13 @@ class CdcAuditSyncMysql
     }
 
     /**
-     * Executes the engine
+     * Execute the engine.
+     *
+     * @return bool
      */
     public function run()
     {
-        $success = true;
-        if ($this->output_dir && $this->output_dir != '=NONE=') {
-            $success = $this->syncAuditTables();
-        }
-
-        return $success;
+        return $this->syncAuditTables();;
     }
 
     /**
@@ -207,7 +210,7 @@ class CdcAuditSyncMysql
 
                 $this->syncTable($table);
             }
-            $this->log(sprintf('Successfully synced audit tables to %s', $this->output_dir), LOG_WARNING);
+            $this->log("Successfully synced audit tables to {$this->output_dir}", LOG_WARNING);
         } catch(Exception $e) {
             $this->log($e->getMessage() . ' -- line: ' . $e->getLine(), LOG_ERR);
             return false;
@@ -230,7 +233,7 @@ class CdcAuditSyncMysql
     }
 
     /**
-     * Ensure that given directory exists.
+     * Ensure that directory exists.
      *
      * @throws Exception if directory can't be created.
      * @param string $path Path to directory.
@@ -249,31 +252,36 @@ class CdcAuditSyncMysql
     }
 
     /**
-     * Syncs audit table to csv file.
+     * Sync audit table to CSV file.
+     *
+     * @throws Exception if file cannot be opened for writing.
+     * @param string $table Table name.
+     * @return void
      */
     private function syncTable($table)
     {
-        $this->log(sprintf("Processing table %s", $table), LOG_INFO);
+        $this->log("Processing table $table", LOG_INFO);
 
-        $pk_last = $this->getLatestCsvRowPk($table);
-        $result = mysql_query(sprintf('select * from `%s` where audit_pk > %s', $table, $pk_last));
+        $pkLast = $this->getLastCsvRowPk($table);
+        $stmt = $this->connection->prepare("SELECT * FROM $table WHERE audit_pk > ?");
+        $stmt->execute([$pkLast]);
 
-        $mode = $pk_last == -1 ? 'w' : 'a';
-        $fh = fopen($this->csvPath($table), $mode);
+        $mode = $pkLast === -1 ? 'w' : 'a';
+        $file = fopen($this->csvPath($table), $mode);
 
-        if (!$fh) {
-            throw new Exception(sprintf("Unable to open file %s for writing", $this->csv_path($table)));
+        if (!$file) {
+            throw new Exception("Unable to open file {$this->csv_path($table)} for writing");
         }
 
-        if ($pk_last == -1) {
-            $this->writeCsvHeaderRow($fh, $result);
+        if ($pkLast === -1) {
+            $this->writeCsvHeaderRow($file, $stmt);
         }
 
-        while ($row = mysql_fetch_array($result, MYSQL_NUM)) {
-            fputcsv($fh, $row);
+        while ($row = $stmt->fetch(PDO::FETCH_NUM)) {
+            fputcsv($file, $row);
         }
 
-        fclose($fh);
+        fclose($file);
 
         if ($this->wipe) {
             $this->wipeAuditTable($table);
@@ -281,132 +289,122 @@ class CdcAuditSyncMysql
     }
 
     /**
-     * Wipes the audit table of all but the last row.
+     * Delete all but the last row from audit table.
      *
-     * Using delete is slow but plays well with concurrent connections.
-     * We use an incremental delete to avoid hitting the DB too hard
-     * when wiping a large table.
-     *
-     * truncate plus tmp table for the last record would be faster but I can't
-     * find any way to do that atomically without possibility of causing trouble
-     * for another session writing to the table.  Same thing for rename.
-     *
-     * For most applications, if this incremental wipe is performed during each
-     * regular sync, then the table should never grow so large that it becomes
-     * a major problem.
-     *
-     * @TODO:  add option to wipe only older than a specific age.
+     * @throws Exception if SQL delete query fails.
+     * @param string $table Table name.
+     * @return void
      */
-    private function wipeAuditAable($table)
+    private function wipeAuditTable($table)
     {
-        $this->log(sprintf('wiping audit table: %s', $table), LOG_INFO);
+        $this->log("wiping audit table: $table", LOG_INFO);
 
-        $incr_amount = 100;
+        /**
+         * Delete is slow but plays well with concurrent connections.
+         * An incremental delete is used to avoid hitting the DB too hard
+         * when wiping large tables.
+         */
+        $increment = 100;
 
-        $loop = 1;
-        do {
+        while (true) {
+            $stmt = $this->connection->prepare("SELECT Count(audit_pk) AS count, Min(audit_pk) AS min, max(audit_pk) AS max FROM `$table`");
+            $stmt->execute();
+            $row = $stmt->fetch();
 
-            if ($loop ++ > 1) {
-                sleep(1);
-            }
+            $count = $row['count'];
+            $min = $row['min'];
+            $max = $row['max'];
 
-            $result = @mysql_query(sprintf('select count(audit_pk) as cnt, min(audit_pk) as min, max(audit_pk) as max from `%s`', $table));
-            $row = @mysql_fetch_assoc($result);
-
-            $cnt = @$row['cnt'];
-            $min = @$row['min'];
-            $max = @$row['max'];
-
-            if ($cnt <= 1 || !$max) {
+            if ($count <= 1 || !$max) {
                 break;
             }
 
-            $delmax = min($min + $incr_amount, $max);
-            $this->log(sprintf('wiping audit table rows %s to %s', $min, $delmax), LOG_INFO);
+            $deleteMax = min($min + $increment, $max);
+            // TODO: Fix log message, numbers not always correct
+            $this->log("wiping audit table rows $min to $deleteMax", LOG_INFO);
 
-            $query = sprintf('delete from `%s` where audit_pk >= %s and audit_pk < %s', $table, $min, $delmax);
-            $result = mysql_query($query);
-
-            if (!$result) {
-                throw new Exception(sprintf("mysql error while wiping %s rows.  %s", $incr_amount, $query ));
+            $stmt = $this->connection->prepare("DELETE FROM `$table` WHERE audit_pk >= ? AND audit_pk < ?");
+            if (!$stmt->execute([$min, $deleteMax])) {
+                throw new Exception("mysql error while wiping " . $deleteMax - $min . " rows.");
             }
-
-        } while(true);
+            sleep(1);
+        }
     }
 
     /**
-     * given csv fh and mysql result, writes a csv header row with column names
+     * Write header row with column names to table CSV file.
+     *
+     * @param string $filename Path to file.
+     * @oaram PDOStatement $result Result set from corresponding table.
+     * @return void
      */
-    private function writeCsvHeaderRow($fh, $result)
+    private function writeCsvHeaderRow($filename, $result)
     {
         $cols = array();
-        $i = 0;
-        while ($i < mysql_num_fields($result)) {
-            $meta = mysql_fetch_field($result, $i);
-            $cols[] = $meta->name;
-            $i ++;
+
+        for ($i = 0; $i < $result->columnCount(); $i++) {
+            $meta = $result->getColumnMeta($i);
+            $cols[] = $meta['name'];
         }
 
-        fputcsv($fh, $cols);
+        fputcsv($filename, $cols);
     }
 
-
     /**
-     * given source table name, primary key value of latest row in csv file, or -1
+     * Get primary key value of last row in table CSV file.
+     *
+     * @param string $table Table name.
+     * @return mixed
      */
-    private function getLatestCsvRowPk($table)
+    private function getLastCsvRowPk($table)
     {
-        $last_pk = -1;
+        $lastPk = -1;
+        $row = str_getcsv($this->getLastLine($this->csvPath($table)));
+        $count = count($row);
 
-        $lastline = $this->getLastLine($this->csv_path($table));
-
-        $row = @str_getcsv($lastline);
-
-        $cnt = count($row);
-
-        if ($cnt > 5) {
-            $tmp = @$row[ $cnt-1 ];  //audit_pk is always last column.
-
-            if (is_numeric($tmp)) {
-                $last_pk = $tmp;
-            }
+        if ($count >= 5 && is_numeric($row[0])) {
+            $lastPk = $row[0];
         }
-        return $last_pk;
+        return $lastPk;
     }
 
     /**
-     * returns the last line of a file, or empty string.
+     * Get last line of file.
+     *
+     * @param string $filename Path to file.
+     * @return string
      */
     private function getLastLine($filename)
     {
         if (!file_exists($filename)) {
-            return '';
+            return null;
         }
 
-        $fp = @fopen($filename, 'r');
-
-        if (!$fp) {
-            throw new Exception(sprintf("Unable to open file %s for reading", $filename));
+        if (!$file = @fopen($filename, 'r')) {
+            throw new Exception("Unable to open file for reading: $filename");
         }
 
-        $pos = -1; $line = ''; $c = '';
+        $position = -1;
+        $line = '';
+        $character = '';
         do {
-            $line = $c . $line;
-            fseek($fp, $pos--, SEEK_END);
-            $c = fgetc($fp);
-        } while ($c !== false && $c != "\n");
+            $line = $character . $line;
+            fseek($file, $position--, SEEK_END);
+            $character = fgetc($file);
+        } while ($character !== false && $character != "\n");
 
-        fclose($fp);
-
+        fclose($file);
         return $line;
     }
 
     /**
-     * given source table name, returns audit sql filename
+     * Get path to table CSV file.
+     *
+     * @param string $table Table name.
+     * @return string
      */
     private function csvPath($table)
     {
-        return sprintf("%s/%s.csv", $this->output_dir, $table);
+        return "{$this->output_dir}/{$table}.csv";
     }
-
 }
