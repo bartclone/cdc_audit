@@ -1,7 +1,7 @@
 #!/usr/bin/env php
 <?php
 
-exit (main());
+exit(main());
 
 /**
  * Application main function.
@@ -136,7 +136,7 @@ class CdcAuditGenMysql
         if (!empty($config['tables'])) {
             $this->tables = array();
             foreach (explode(',', $config['tables']) as $table) {
-               $this->tables[trim($table)] = true;
+                $this->tables[trim($table)] = true;
             }
         }
         $this->exclude = $config['exclude'];
@@ -235,7 +235,7 @@ class CdcAuditGenMysql
             /**
              * Delete audit file if already exists
              */
-            $this->log("Deleting audit table definition files in {$this->output_dir}",  LOG_DEBUG);
+            $this->log("Deleting audit table definition files in {$this->output_dir}", LOG_DEBUG);
             foreach (glob($this->output_dir . '/*.audit.sql') as $file) {
                 if (is_array($this->tables)) {
                     $tableName = explode('.', $file)[0];
@@ -263,14 +263,14 @@ class CdcAuditGenMysql
             ];
             $this->connection = new PDO($dsn, $this->user, $this->pass, $opt);
 
-            $this->log('Connected to mysql. Getting tables.',  LOG_INFO);
+            $this->log('Connected to mysql. Getting tables.', LOG_INFO);
 
             /**
              * Get all tables
              */
             $stmt = $this->connection->prepare("SHOW TABLES");
             $stmt->execute();
-            while($table = $stmt->fetch()["Tables_in_{$this->db}"]) {
+            while ($table = $stmt->fetch()["Tables_in_{$this->db}"]) {
                 if (is_array($this->tables)) {
                     if ((!$this->exclude && !isset($this->tables[$table]))
                             || ($this->exclude && isset($this->tables[$table]))) {
@@ -327,7 +327,7 @@ class CdcAuditGenMysql
                 $this->writeAuditTriggers($table, $info, $triggers);
             }
             $this->log("Successfully generated audit tables and triggers in {$this->output_dir}", LOG_INFO);
-        } catch(Exception $e) {
+        } catch (Exception $e) {
             $this->log($e->getMessage() . ' -- line: ' . $e->getLine(), LOG_ERR);
             return false;
         }
@@ -380,8 +380,8 @@ class CdcAuditGenMysql
         foreach ($info as $column) {
             $comment = @$column['Comment'];
             if (@$column['Key'] == 'PRI') {
-               $pkfields[] = sprintf('`%s`', $column['Field']);
-               $comment = 'Primary key in source table ' . $table;
+                $pkfields[] = sprintf('`%s`', $column['Field']);
+                $comment = 'Primary key in source table ' . $table;
             }
 
             $lines[] = sprintf(
@@ -477,7 +477,7 @@ class CdcAuditGenMysql
             if ($this->separate && !stristr($trigger['TriggerName'], '_audit_')) {
                 $this->log("Non-audit trigger encountered: {$trigger['TriggerName']}.  skipping", LOG_INFO);
                 continue;
-            } elseif(!$this->separate) {
+            } elseif (!$this->separate) {
                 /**
                  * Extract and reuse trigger action
                  */

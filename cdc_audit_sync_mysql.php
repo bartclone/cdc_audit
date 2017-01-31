@@ -3,7 +3,7 @@
 
 // TODO: add feature to wipe only older than a specific age.
 
-exit (main());
+exit(main());
 
 /**
  * Application main function.
@@ -138,7 +138,7 @@ class CdcAuditSyncMysql
         if (!empty($config['tables'])) {
             $this->tables = array();
             foreach (explode(',', $config['tables']) as $table) {
-               $this->tables[trim($table)] = true;
+                $this->tables[trim($table)] = true;
             }
         }
         $this->exclude = $config['exclude'];
@@ -158,7 +158,7 @@ class CdcAuditSyncMysql
      */
     public function run()
     {
-        return $this->syncAuditTables();;
+        return $this->syncAuditTables();
     }
 
     /**
@@ -184,14 +184,14 @@ class CdcAuditSyncMysql
             ];
             $this->connection = new PDO($dsn, $this->user, $this->pass, $opt);
 
-            $this->log('Connected to mysql. Getting tables.',  LOG_INFO);
+            $this->log('Connected to mysql. Getting tables.', LOG_INFO);
 
             /**
              * Get all tables
              */
             $stmt = $this->connection->prepare("SHOW TABLES");
             $stmt->execute();
-            while($table = $stmt->fetch()["Tables_in_{$this->db}"]) {
+            while ($table = $stmt->fetch()["Tables_in_{$this->db}"]) {
                 if (is_array($this->tables)) {
                     if ((!$this->exclude && !isset($this->tables[$table]))
                             || ($this->exclude && isset($this->tables[$table]))) {
@@ -211,7 +211,7 @@ class CdcAuditSyncMysql
                 $this->syncTable($table);
             }
             $this->log("Successfully synced audit tables to {$this->output_dir}", LOG_WARNING);
-        } catch(Exception $e) {
+        } catch (Exception $e) {
             $this->log($e->getMessage() . ' -- line: ' . $e->getLine(), LOG_ERR);
             return false;
         }
