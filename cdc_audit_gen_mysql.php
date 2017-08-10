@@ -442,24 +442,21 @@ class CdcAuditGenMysql
             'CREATE TRIGGER `%5$s` AFTER INSERT ON `%1$s`' . "\n" .
             ' FOR EACH ROW BEGIN' . "\n" .
             '  INSERT INTO `%2$s` (%3$s) VALUES(%4$s);' . "\n" .
-            '  %6$s;' . "\n" .
-            ' END;' . "\n" .
+            '%6$s END;' . "\n" .
             '@@' . "\n" .
             '-- %1$s AFTER UPDATE trigger.' . "\n" .
             'DELIMITER @@' . "\n" .
             'CREATE TRIGGER `%8$s` AFTER UPDATE ON `%1$s`' . "\n" .
             ' FOR EACH ROW BEGIN' . "\n" .
             '  INSERT INTO `%2$s` (%3$s) VALUES(%7$s);' . "\n" .
-            '  %9$s;' . "\n" .
-            ' END;' . "\n" .
+            '%9$s END;' . "\n" .
             '@@' . "\n" .
             '-- %1$s AFTER DELETE trigger.' . "\n" .
             'DELIMITER @@' . "\n" .
             'CREATE TRIGGER `%11$s` AFTER DELETE ON `%1$s`' . "\n" .
             ' FOR EACH ROW BEGIN' . "\n" .
             '  INSERT INTO `%2$s` (%3$s) VALUES(%10$s);' . "\n" .
-            '  %12$s;' . "\n" .
-            ' END;' . "\n" .
+            '%12$s END;' . "\n" .
             '@@' . "\n";
 
         $auditTable = $this->getAuditTableName($table);
@@ -491,11 +488,11 @@ class CdcAuditGenMysql
                 }
 
                 /**
-                 * Remove any audit statement; any line containing $auditTable
+                 * Remove any audit statements and empty lines
                  */
                 $actionLines = array();
                 foreach (explode("\n", substr($trigger['TriggerAction'], 5, - 3)) as $line) {
-                    if (!strstr($line, $auditTable)) {
+                    if (!strstr($line, $auditTable) && (strlen($line) > 0 && strlen(trim($line)) != 0)) {
                         $actionLines[] = $line;
                     }
                 }
@@ -556,14 +553,16 @@ class CdcAuditGenMysql
             $colnames,
             $insertValues,
             $this->separate ? "{$table}_audit_insert" : "${table}_after_insert",
-            !empty($oldTriggers['insert']) ? $oldTriggers['insert']['Action'] : '',
+            !empty($oldTriggers['insert'] && !empty($oldTriggers['insert']['Action'])) ? '  ' . $oldTriggers['insert']['Action'] . "\n" : '',
             $updateValues,
             $updateName = $this->separate ? "{$table}_audit_update" : "${table}_after_update",
-            !empty($oldTriggers['update']) ? $oldTriggers['update']['Action'] : '',
+            !empty($oldTriggers['update'] && !empty($oldTriggers['update']['Action'])) ? '  ' . $oldTriggers['update']['Action'] . "\n" : '',
             $deleteValues,
             $deleteName = $this->separate ? "{$table}_audit_delete" : "${table}_after_delete",
-            !empty($oldTriggers['delete']) ? $oldTriggers['delete']['Action'] : ''
+            !empty($oldTriggers['delete'] && !empty($oldTriggers['delete']['Action'])) ? '  ' . $oldTriggers['delete']['Action'] . "\n" : ''
         );
+
+        $output .= "DELIMITER ;\n";
 
         /**
          * Write to file
