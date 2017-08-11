@@ -268,7 +268,7 @@ class CdcAuditGenMysql
             /**
              * Get all tables
              */
-            $stmt = $this->connection->prepare("SHOW TABLES");
+            $stmt = $this->connection->prepare("SHOW FULL TABLES WHERE Table_type='BASE TABLE'");
             $stmt->execute();
             while ($table = $stmt->fetch()["Tables_in_{$this->db}"]) {
                 if (is_array($this->tables)) {
