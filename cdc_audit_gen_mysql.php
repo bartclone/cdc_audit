@@ -357,7 +357,7 @@ class CdcAuditGenMysql
             ' * for manual modifications/extensions.' . "\n" .
             ' *' . "\n" .
             ' * For additional documentation, see:' . "\n" .
-            ' * https://github.com/dan-da/cdc_audit' . "\n" .
+            ' * https://github.com/tdely/cdc_audit' . "\n" .
             ' *' . "\n" .
             ' */' . "\n";
         $output = sprintf($headerMask, $table, $this->db);
@@ -432,7 +432,7 @@ class CdcAuditGenMysql
             ' * Audit triggers for table `%2$s`.`%1$s`.' . "\n" .
             ' *' . "\n" .
             ' * For additional documentation, see:' . "\n" .
-            ' * https://github.com/dan-da/cdc_audit' . "\n" .
+            ' * https://github.com/tdely/cdc_audit' . "\n" .
             ' *' . "\n" .
             ' */' . "\n";
 
