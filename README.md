@@ -218,5 +218,3 @@ Todos
 
  - Auto-Detect schema changes to source table and apply to audit table.
 
- - Enable creation of the audit tables in a separate database if desired.
-

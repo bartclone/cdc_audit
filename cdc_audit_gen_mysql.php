@@ -10,7 +10,7 @@ exit(main());
  */
 function main()
 {
-    $opt = getopt("a:A:d:eh:su:p:o:v:m:t:?");
+    $opt = getopt("a:A:d:D:eh:su:p:o:v:m:t:?");
     if (isset($opt['?']) || !isset($opt['d'])) {
         printHelp();
         return -1;
@@ -24,6 +24,7 @@ function main()
     $config['pass'] = getOption($opt, 'p', '');
 
     // Audit settings
+    $config['audit_db'] = getOption($opt, 'D', $config['db']);
     $config['tables'] = getOption($opt, 't', null);
     $config['exclude'] = getOption($opt, 'e', null) !== null ? true : false;
     $config['separate'] = getOption($opt, 's', null) !== null ? true : false;
@@ -75,13 +76,14 @@ function printHelp()
         "Usage: cdc_audit_gen_mysql.php [Options] -d <db> [-h <host> -d <db> -u <user> -p <pass>]\n" .
         "\n" .
         "   Required:\n" .
-        "   -d DB              database name\n" .
+        "   -d DB              source database\n" .
         "\n" .
         "   Options:\n" .
         "   -h HOST            address of machine running mysql.          default = localhost\n" .
         "   -u USER            mysql username.                            default = root\n" .
         "   -p PASS            mysql password.\n" .
         "   -m DIR             path to write audit files.                 default = ./cdc_audit_gen\n" .
+        "   -D DB              destination database for audit tables.     default = value of -d\n" .
         "   -t TABLES          comma separated list of tables to audit.   default = generate for all tables\n" .
         "   -e                 invert -t, exclude the listed tables.\n" .
         "   -s                 separate triggers, do not rebuild and drop\n" .
@@ -109,6 +111,7 @@ class CdcAuditGenMysql
     private $pass;
     private $db;
 
+    private $audit_db;
     private $tables;
     private $exclude;
     private $separate;
@@ -133,6 +136,7 @@ class CdcAuditGenMysql
         $this->user = $config['user'];
         $this->pass = $config['pass'];
 
+        $this->audit_db = $config['audit_db'];
         if (!empty($config['tables'])) {
             $this->tables = array();
             foreach (explode(',', $config['tables']) as $table) {
@@ -345,7 +349,7 @@ class CdcAuditGenMysql
     {
         $headerMask =
             '/**' . "\n" .
-            ' * Audit table for table `%1$s`.' . "\n" .
+            ' * Audit table for table `%2$s`.`%1$s`.' . "\n" .
             ' *' . "\n" .
             ' * !!! DO NOT MODIFY THIS FILE MANUALLY !!!' . "\n" .
             ' *' . "\n" .
@@ -356,14 +360,14 @@ class CdcAuditGenMysql
             ' * https://github.com/dan-da/cdc_audit' . "\n" .
             ' *' . "\n" .
             ' */' . "\n";
-        $output = sprintf($headerMask, $table);
+        $output = sprintf($headerMask, $table, $this->db);
 
         // Index definition mask
         $indexMask = 'INDEX (%1$s)';
 
         // Table definition mask
         $tableMask =
-            'CREATE TABLE IF NOT EXISTS `%1$s` (' . "\n" .
+            'CREATE TABLE IF NOT EXISTS `%3$s`.`%1$s` (' . "\n" .
             '%2$s' . "\n" .
             ');' . "\n";
 
@@ -400,7 +404,7 @@ class CdcAuditGenMysql
         }
         $lines[] = sprintf($indexMask, '`audit_timestamp`');
 
-        $output .= sprintf($tableMask, $this->getAuditTableName($table), implode(",\n", $lines)) . "\n\n";
+        $output .= sprintf($tableMask, $this->getAuditTableName($table), implode(",\n", $lines), $this->audit_db) . "\n\n";
 
         /**
          * Write to file
@@ -425,37 +429,37 @@ class CdcAuditGenMysql
     {
         $headerMask =
             '/**' . "\n" .
-            ' * Audit triggers for table `%1$s`.' . "\n" .
+            ' * Audit triggers for table `%2$s`.`%1$s`.' . "\n" .
             ' *' . "\n" .
             ' * For additional documentation, see:' . "\n" .
             ' * https://github.com/dan-da/cdc_audit' . "\n" .
             ' *' . "\n" .
             ' */' . "\n";
 
-        $output = sprintf($headerMask, $table);
+        $output = sprintf($headerMask, $table, $this->db);
 
-        $dropTriggerMask = 'DROP TRIGGER IF EXISTS `%1$s`;' . "\n";
+        $dropTriggerMask = 'DROP TRIGGER IF EXISTS `%2$s`.`%1$s`;' . "\n";
 
         $triggersMask =
             '-- %1$s AFTER INSERT trigger.' . "\n" .
             'DELIMITER @@' . "\n" .
-            'CREATE TRIGGER `%5$s` AFTER INSERT ON `%1$s`' . "\n" .
+            'CREATE TRIGGER `%13$s`.`%5$s` AFTER INSERT ON `%13$s`.`%1$s`' . "\n" .
             ' FOR EACH ROW BEGIN' . "\n" .
-            '  INSERT INTO `%2$s` (%3$s) VALUES(%4$s);' . "\n" .
+            '  INSERT INTO `%14$s`.`%2$s` (%3$s) VALUES(%4$s);' . "\n" .
             '%6$s END;' . "\n" .
             '@@' . "\n" .
             '-- %1$s AFTER UPDATE trigger.' . "\n" .
             'DELIMITER @@' . "\n" .
-            'CREATE TRIGGER `%8$s` AFTER UPDATE ON `%1$s`' . "\n" .
+            'CREATE TRIGGER `%13$s`.`%8$s` AFTER UPDATE ON `%13$s`.`%1$s`' . "\n" .
             ' FOR EACH ROW BEGIN' . "\n" .
-            '  INSERT INTO `%2$s` (%3$s) VALUES(%7$s);' . "\n" .
+            '  INSERT INTO `%14$s`.`%2$s` (%3$s) VALUES(%7$s);' . "\n" .
             '%9$s END;' . "\n" .
             '@@' . "\n" .
             '-- %1$s AFTER DELETE trigger.' . "\n" .
             'DELIMITER @@' . "\n" .
-            'CREATE TRIGGER `%11$s` AFTER DELETE ON `%1$s`' . "\n" .
+            'CREATE TRIGGER `%13$s`.`%11$s` AFTER DELETE ON `%13$s`.`%1$s`' . "\n" .
             ' FOR EACH ROW BEGIN' . "\n" .
-            '  INSERT INTO `%2$s` (%3$s) VALUES(%10$s);' . "\n" .
+            '  INSERT INTO `%14$s`.`%2$s` (%3$s) VALUES(%10$s);' . "\n" .
             '%12$s END;' . "\n" .
             '@@' . "\n";
 
@@ -503,7 +507,7 @@ class CdcAuditGenMysql
                 );
                 $this->log("Extracted action from {$trigger['TriggerName']}", LOG_INFO);
             }
-            $output .= sprintf($dropTriggerMask, $trigger['TriggerName']);
+            $output .= sprintf($dropTriggerMask, $trigger['TriggerName'], $this->db);
         }
 
         $fields = array();
@@ -559,7 +563,9 @@ class CdcAuditGenMysql
             !empty($oldTriggers['update'] && !empty($oldTriggers['update']['Action'])) ? '  ' . $oldTriggers['update']['Action'] . "\n" : '',
             $deleteValues,
             $deleteName = $this->separate ? "{$table}_audit_delete" : "${table}_after_delete",
-            !empty($oldTriggers['delete'] && !empty($oldTriggers['delete']['Action'])) ? '  ' . $oldTriggers['delete']['Action'] . "\n" : ''
+            !empty($oldTriggers['delete'] && !empty($oldTriggers['delete']['Action'])) ? '  ' . $oldTriggers['delete']['Action'] . "\n" : '',
+            $this->db,
+            $this->audit_db
         );
 
         $output .= "DELIMITER ;\n";
