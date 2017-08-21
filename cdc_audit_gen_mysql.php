@@ -10,7 +10,7 @@ exit(main());
  */
 function main()
 {
-    $opt = getopt("a:A:d:D:eh:su:p:o:v:m:t:?");
+    $opt = getopt("a:A:d:D:eh:su:p:o:v:m:t:y?");
     if (isset($opt['?']) || !isset($opt['d'])) {
         printHelp();
         return -1;
@@ -25,6 +25,7 @@ function main()
 
     // Audit settings
     $config['audit_db'] = getOption($opt, 'D', $config['db']);
+    $config['dynamic_columns'] = getOption($opt, 'y', null) !== null ? true : false;
     $config['tables'] = getOption($opt, 't', null);
     $config['exclude'] = getOption($opt, 'e', null) !== null ? true : false;
     $config['separate'] = getOption($opt, 's', null) !== null ? true : false;
@@ -84,6 +85,9 @@ function printHelp()
         "   -p PASS            mysql password.\n" .
         "   -m DIR             path to write audit files.                 default = ./cdc_audit_gen\n" .
         "   -D DB              destination database for audit tables.     default = value of -d\n" .
+        "   -y                 use MariaDB dynamic columns for storing\n" .
+        "                      source table values instead of separate\n" .
+        "                      columns for each.\n" .
         "   -t TABLES          comma separated list of tables to audit.   default = generate for all tables\n" .
         "   -e                 invert -t, exclude the listed tables.\n" .
         "   -s                 separate triggers, do not rebuild and drop\n" .
@@ -112,6 +116,7 @@ class CdcAuditGenMysql
     private $db;
 
     private $audit_db;
+    private $dynamic_columns;
     private $tables;
     private $exclude;
     private $separate;
@@ -123,6 +128,8 @@ class CdcAuditGenMysql
     private $stdout;
 
     private $connection;
+
+    private $audit_columns;
 
     /**
      * Constructor.
@@ -137,6 +144,7 @@ class CdcAuditGenMysql
         $this->pass = $config['pass'];
 
         $this->audit_db = $config['audit_db'];
+        $this->dynamic_columns = $config['dynamic_columns'];
         if (!empty($config['tables'])) {
             $this->tables = array();
             foreach (explode(',', $config['tables']) as $table) {
@@ -151,6 +159,13 @@ class CdcAuditGenMysql
         $this->output_dir = $config['audit_dir'];
         $this->verbosity = $config['verbosity'];
         $this->stdout = $config['stdout'];
+
+        $this->audit_columns = array(
+            array('Field' => 'audit_user', 'Type' => 'VARCHAR(255)', 'Null' => false, 'Comment' => 'User triggering source table event'),
+            array('Field' => 'audit_event', 'Type' => "ENUM('insert','update','delete')", 'Null' => false, 'Comment' => 'Type of source table event'),
+            array('Field' => 'audit_timestamp', 'Type' => 'TIMESTAMP', 'Null' => false, 'Comment' => 'Timestamp of source table event'),
+            array('Field' => 'audit_pk', 'Type' => 'INT(11) UNSIGNED', 'Null' => false, 'Comment' => 'Audit table primary key, useful for sorting since MySQL time data types are only granular to second level.'),
+        );
     }
 
     /**
@@ -374,34 +389,51 @@ class CdcAuditGenMysql
         // Column definition mask
         $columnMask = '`%1$s` %2$s %3$s %4$s %5$s COMMENT \'%6$s\'';
 
-        // Prepend audit fields to list of table fields
-        array_unshift($info, array('Field' => 'audit_user', 'Type' => 'VARCHAR(255)', 'Null' => false, 'Comment' => 'User triggering source table event'));
-        array_unshift($info, array('Field' => 'audit_event', 'Type' => "ENUM('insert','update','delete')", 'Null' => false, 'Comment' => 'Type of source table event'));
-        array_unshift($info, array('Field' => 'audit_timestamp', 'Type' => 'TIMESTAMP', 'Null' => false, 'Comment' => 'Timestamp of source table event'));
-        array_unshift($info, array('Field' => 'audit_pk', 'Type' => 'INT(11) UNSIGNED', 'Null' => false, 'Comment' => 'Audit table primary key, useful for sorting since MySQL time data types are only granular to second level.'));
+        if ($this->dynamic_columns) {
+            /**
+             * MariaDB dynamic columns
+             */
+            $dyn_cols = array(array('Field' => 'audit_columns', 'Type' => 'BLOB', 'Null' => false, 'Comment' => 'Dynamic columns for source table'));
+            foreach (array_merge($this->audit_columns, $dyn_cols) as $column) {
+                $comment = @$column['Comment'];
+                $lines[] = sprintf(
+                    $columnMask,
+                    $column['Field'],
+                    strtoupper($column['Type']),
+                    $column['Null'] === 'YES' ? 'NULL' : 'NOT NULL',
+                    $column['Field'] === 'audit_pk' ? 'PRIMARY KEY' : '',
+                    $column['Field'] === 'audit_pk' ? 'AUTO_INCREMENT' : '',
+                    str_replace("'", "''", $comment)
+                );
+            }
+        } else {
+            /**
+             * MySQL static columns
+             */
+            $pkfields = array();
+            foreach (array_merge($this->audit_columns, $info) as $column) {
+                $comment = @$column['Comment'];
+                if (@$column['Key'] == 'PRI') {
+                    $pkfields[] = sprintf('`%s`', $column['Field']);
+                    $comment = 'Primary key in source table ' . $table;
+                }
 
-        $pkfields = array();
-        foreach ($info as $column) {
-            $comment = @$column['Comment'];
-            if (@$column['Key'] == 'PRI') {
-                $pkfields[] = sprintf('`%s`', $column['Field']);
-                $comment = 'Primary key in source table ' . $table;
+                $lines[] = sprintf(
+                    $columnMask,
+                    $column['Field'],
+                    strtoupper($column['Type']),
+                    $column['Null'] === 'YES' ? 'NULL' : 'NOT NULL',
+                    $column['Field'] === 'audit_pk' ? 'PRIMARY KEY' : '',
+                    $column['Field'] === 'audit_pk' ? 'AUTO_INCREMENT' : '',
+                    str_replace("'", "''", $comment)
+                );
             }
 
-            $lines[] = sprintf(
-                $columnMask,
-                $column['Field'],
-                strtoupper($column['Type']),
-                $column['Null'] === 'YES' ? 'NULL' : 'NOT NULL',
-                $column['Field'] === 'audit_pk' ? 'PRIMARY KEY' : '',
-                $column['Field'] === 'audit_pk' ? 'AUTO_INCREMENT' : '',
-                str_replace("'", "''", $comment)
-            );
+            if (count($pkfields)) {
+                $lines[] = sprintf($indexMask, implode(', ', $pkfields));
+            }
         }
 
-        if (count($pkfields)) {
-            $lines[] = sprintf($indexMask, implode(', ', $pkfields));
-        }
         $lines[] = sprintf($indexMask, '`audit_timestamp`');
 
         $output .= sprintf($tableMask, $this->getAuditTableName($table), implode(",\n", $lines), $this->audit_db) . "\n\n";
@@ -510,36 +542,43 @@ class CdcAuditGenMysql
             $output .= sprintf($dropTriggerMask, $trigger['TriggerName'], $this->db);
         }
 
-        $fields = array();
-        $newValues = array();
-        $oldValues = array();
-        foreach ($info as $column) {
-            $fields[] = $column['Field'];
-            $newValues[] = "NEW.`{$column['Field']}`";
-            $oldValues[] = "OLD.`{$column['Field']}`";
+        $fields = array('audit_timestamp','audit_event','audit_user');
+        $insertValues = array('CURRENT_TIMESTAMP',"'insert'",'USER()');
+        $updateValues = array('CURRENT_TIMESTAMP',"'update'",'USER()');
+        $deleteValues = array('CURRENT_TIMESTAMP',"'delete'",'USER()');
+        if ($this->dynamic_columns) {
+            /**
+             * MariaDB dynamic columns
+             */
+            $fields[] = 'audit_columns';
+            $dynamicColumns = array(
+                'insert' => array(),
+                'update' => array(),
+                'delete' => array(),
+            );
+            foreach ($info as $column) {
+                $dynamicColumns['insert'][] = "'" . $column['Field'] . "'";
+                $dynamicColumns['update'][] = "'" . $column['Field'] . "'";
+                $dynamicColumns['delete'][] = "'" . $column['Field'] . "'";
+                $dynamicColumns['insert'][] = "NEW.`{$column['Field']}`";
+                $dynamicColumns['update'][] = "NEW.`{$column['Field']}`";
+                $dynamicColumns['delete'][] = "OLD.`{$column['Field']}`";
+            }
+
+            $insertValues[] = "COLUMN_CREATE(" . implode(', ', $dynamicColumns['insert']) . ")";
+            $updateValues[] = "COLUMN_CREATE(" . implode(', ', $dynamicColumns['update']) . ")";
+            $deleteValues[] = "COLUMN_CREATE(" . implode(', ', $dynamicColumns['delete']) . ")";
+        } else {
+            /**
+             * MySQL static columns
+             */
+            foreach ($info as $column) {
+                $fields[] = $column['Field'];
+                $insertValues[] = "NEW.`{$column['Field']}`";
+                $updateValues[] = "NEW.`{$column['Field']}`";
+                $deleteValues[] = "OLD.`{$column['Field']}`";
+            }
         }
-
-        $insertValues = $newValues;
-        $updateValues = $newValues;
-        $deleteValues = $oldValues;
-
-        // Add 'audit_timestamp' field and value
-        array_unshift($fields, 'audit_timestamp');
-        array_unshift($insertValues, 'CURRENT_TIMESTAMP');
-        array_unshift($updateValues, 'CURRENT_TIMESTAMP');
-        array_unshift($deleteValues, 'CURRENT_TIMESTAMP');
-
-        // Add 'audit_event' field and value
-        array_unshift($fields, 'audit_event');
-        array_unshift($insertValues, "'insert'");
-        array_unshift($updateValues, "'update'");
-        array_unshift($deleteValues, "'delete'");
-
-        // Add 'audit_user' field and value
-        array_unshift($fields, 'audit_user');
-        array_unshift($insertValues, 'USER()');
-        array_unshift($updateValues, 'USER()');
-        array_unshift($deleteValues, 'USER()');
 
         foreach ($fields as &$field) {
             $field = sprintf('`%s`', $field);

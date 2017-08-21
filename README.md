@@ -11,9 +11,10 @@ Features
  - Automates generation of audit tables, one audit table per source table.
  - Automates generation of triggers to populate audit tables.
  - Automates syncing of new rows in audit tables to .csv files.
- - Reads mysql information_schema to automatically determine tables and columns.
+ - Reads MySQL information_schema to automatically determine tables and columns.
  - Fast triggers. only one insert and no selects per trigger execution.
  - Can generate audit tables and triggers for all tables, a specified list of tables, or any not in the list of tables.
+ - Can create standard columns for source table values, or use MariaDB dynamic columns for more flexibility.
  - Can sync all audit tables, or a specified list.
  - Retains pre-existing trigger logic, if any, when generating AFTER triggers.
  - Sync script option to delete all but last audit row, to keep source DB small.
@@ -43,6 +44,9 @@ Usage: cdc_audit_gen_mysql.php [Options] -d <db> [-h <host> -d <db> -u <user> -p
    -p PASS            mysql password.
    -m DIR             path to write audit files.                 default = ./db_audit
    -D DB              destination database for audit tables.     default = value of -d
+   -y                 use MariaDB dynamic columns for storing
+                      source table values instead of separate
+                      columns for each.
    -t TABLES          comma separated list of tables to audit.   default = generate for all tables
    -e                 invert -t, exclude the listed tables.
    -s                 separate triggers, do not rebuild and drop
