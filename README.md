@@ -1,7 +1,7 @@
-cdc_audit - Software to automate change data capture via triggers for mysql.
+cdc_audit - Software to automate change data capture via triggers for MySQL.
 
 cdc_audit presently consists of two scripts:
- - a script to automatically generate mysql audit tables and triggers.
+ - a script to automatically generate MySQL audit tables and triggers.
  - (experimental) a script to auto sync new rows in audit tables to a CSV file.
 
 
@@ -99,7 +99,7 @@ Usage Examples
     php cdc_audit_gen_mysql.php -d <db> [-h <host> -d <db> -u <user> -p <pass>]
 
  SQL file(s) will be generated in ./cdc_audit_gen.
- They can be applied to your database using the mysql command-line client, eg:
+ They can be applied to your database using the MySQL command-line client, eg:
 
  $ mysql -u root <database> < ./cdc_audit_gen/table1.sql
 
@@ -126,9 +126,10 @@ Usage Examples
 Known Issues
 ==============
 
- - If you make a change to the source table schema then the audit table and
-   trigger will not reflect the change.  You will need to alter the audit table
-   manually then re-run cdc_audit_gen_mysql to recreate the triggers.
+ - If you make a change to the source table schema the audit table (unless dynamic
+   columns are used) and trigger will not reflect the change.  You will need to
+   re-run cdc_audit_gen_mysql to recreate the triggers then if using standard MySQL
+   columns manually alter the audit table.
 
  - no locking is performed on the target CSV file at present.  This could
    cause file corruption.
