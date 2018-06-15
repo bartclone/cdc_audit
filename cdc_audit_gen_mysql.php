@@ -1,7 +1,7 @@
 #!/usr/bin/env php
 
 <?php
-// ./cdc_audit_gen_mysql.php -d oefenweb_nl_app -m log/ -t schools -n audit_ -3 -o log/trigger.log
+// ./cdc_audit_gen_mysql.php -d oefenweb_nl_app -m log/ -t schools -o log/trigger.log
 exit ( main() );
 
 /**
@@ -214,18 +214,18 @@ class cdc_audit_gen_mysql {
 
                     // Get table info
                     $sort_clause = '';  // default is unsorted.
-                    $struct = mysqli_query("select Column_name as Field, Column_Type as Type, Is_Nullable as `Null`, Column_Key as `Key`, Column_Default as `Default`, Extra, Column_Comment as Comment from INFORMATION_SCHEMA.COLUMNS where TABLE_SCHEMA = '{$this->db}' and TABLE_NAME = '$table' $sort_clause");
+                    $struct = mysqli_query($link, "select Column_name as Field, Column_Type as Type, Is_Nullable as `Null`, Column_Key as `Key`, Column_Default as `Default`, Extra, Column_Comment as Comment from INFORMATION_SCHEMA.COLUMNS where TABLE_SCHEMA = '{$this->db}' and TABLE_NAME = '$table' $sort_clause");
 
                     $data = array();
-                    while ($row2 = mysqli_fetch_array($struct, MYSQL_ASSOC)) {
+                    while ($row2 = mysqli_fetch_array($struct, MYSQLI_ASSOC)) {
                         $data[] = $row2;
                     }
 
                     // Get triggers associated with table
-                    $struct = mysqli_query("select trigger_name, EVENT_MANIPULATION, ACTION_STATEMENT from INFORMATION_SCHEMA.TRIGGERS where EVENT_OBJECT_TABLE = '$table' and ACTION_TIMING = 'AFTER'");
+                    $struct = mysqli_query($link, "select trigger_name, EVENT_MANIPULATION, ACTION_STATEMENT from INFORMATION_SCHEMA.TRIGGERS where EVENT_OBJECT_TABLE = '$table' and ACTION_TIMING = 'AFTER'");
 
                     $triggers = array();
-                    while ($row2 = mysqli_fetch_array($struct, MYSQL_ASSOC)) {
+                    while ($row2 = mysqli_fetch_array($struct, MYSQLI_ASSOC)) {
                         $triggers[] = $row2;
                     }
 
